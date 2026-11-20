@@ -294,7 +294,7 @@ def run_research_pipeline() -> None:
 
     print("\nTRAINING PERIOD — SELECTED PAIRS")
     print("--------------------------------")
-
+    candidate_pairs = candidate_pairs[candidate_pairs["significant"]].copy()
     if candidate_pairs.empty:
         print("No statistically significant pairs found.")
     else:
@@ -308,7 +308,7 @@ def run_research_pipeline() -> None:
                     "adjusted_p_value",
                     "significant",
                 ]
-            ].head(20).to_string(index=False)
+            ].to_string(index=False)
         )
 
     print("\nOut-of-sample observations reserved:")
