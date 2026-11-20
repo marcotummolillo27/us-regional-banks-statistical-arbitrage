@@ -162,9 +162,6 @@ def validate_price_data(prices: pd.DataFrame) -> None:
 # 5. EXECUTION
 # --------------------------------------------------
 
-if __name__ == "__main__":
-    price_data = download_price_data()
-    validate_price_data(price_data)
 
 # --------------------------------------------------
 # 6. PAIR DISCOVERY AND COINTEGRATION
@@ -262,5 +259,63 @@ def screen_cointegrated_pairs(
     )
 
     return results_df
+
+# --------------------------------------------------
+# 7. TRAIN / TEST SPLIT
+# --------------------------------------------------
+
+def run_research_pipeline() -> None:
+    """Run initial pair discovery using training data only."""
+
+    price_data = download_price_data()
+    validate_price_data(price_data)
+
+    split_index = int(len(price_data) * 0.70)
+
+    training_prices = price_data.iloc[:split_index].copy()
+    testing_prices = price_data.iloc[split_index:].copy()
+
+    logger.info(
+        "Training period: %s to %s",
+        training_prices.index.min().date(),
+        training_prices.index.max().date(),
+    )
+
+    logger.info(
+        "Testing period: %s to %s",
+        testing_prices.index.min().date(),
+        testing_prices.index.max().date(),
+    )
+
+    # Pair selection uses training observations only.
+    candidate_pairs = screen_cointegrated_pairs(
+        training_prices
+    )
+
+    print("\nTRAINING PERIOD — SELECTED PAIRS")
+    print("--------------------------------")
+
+    if candidate_pairs.empty:
+        print("No statistically significant pairs found.")
+    else:
+        print(
+            candidate_pairs[
+                [
+                    "ticker_1",
+                    "ticker_2",
+                    "return_correlation",
+                    "p_value",
+                    "adjusted_p_value",
+                    "significant",
+                ]
+            ].head(20).to_string(index=False)
+        )
+
+    print("\nOut-of-sample observations reserved:")
+    print(len(testing_prices))
+
+
+if __name__ == "__main__":
+    run_research_pipeline()
 
 
