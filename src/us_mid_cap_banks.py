@@ -165,3 +165,102 @@ def validate_price_data(prices: pd.DataFrame) -> None:
 if __name__ == "__main__":
     price_data = download_price_data()
     validate_price_data(price_data)
+
+# --------------------------------------------------
+# 6. PAIR DISCOVERY AND COINTEGRATION
+# --------------------------------------------------
+
+from itertools import combinations
+
+from statsmodels.tsa.stattools import coint
+from statsmodels.stats.multitest import multipletests
+
+
+def screen_cointegrated_pairs(
+    prices: pd.DataFrame,
+    correlation_threshold: float = 0.50,
+    min_observations: int = CONFIG.min_observations,
+) -> pd.DataFrame:
+    """
+    Screen pairs using return correlation, then test
+    log-price cointegration with the Engle-Granger test.
+
+    IMPORTANT:
+    Call this function using training data only.
+    Do not use future observations to select pairs.
+    """
+
+    log_prices = np.log(prices.where(prices > 0))
+    returns = log_prices.diff()
+
+    results = []
+
+    for ticker_1, ticker_2 in combinations(prices.columns, 2):
+
+        pair_returns = returns[
+            [ticker_1, ticker_2]
+        ].dropna()
+
+        if len(pair_returns) < min_observations:
+            continue
+
+        correlation = pair_returns.corr().iloc[0, 1]
+
+        if not np.isfinite(correlation):
+            continue
+
+        if abs(correlation) < correlation_threshold:
+            continue
+
+        pair_log_prices = log_prices[
+            [ticker_1, ticker_2]
+        ].dropna()
+
+        if len(pair_log_prices) < min_observations:
+            continue
+
+        statistic, p_value, critical_values = coint(
+            pair_log_prices[ticker_1],
+            pair_log_prices[ticker_2],
+            trend="c",
+            autolag="aic",
+        )
+
+        results.append({
+            "ticker_1": ticker_1,
+            "ticker_2": ticker_2,
+            "return_correlation": correlation,
+            "cointegration_statistic": statistic,
+            "p_value": p_value,
+            "observations": len(pair_log_prices),
+        })
+
+    if not results:
+        logger.warning("No candidate pairs passed the screening.")
+        return pd.DataFrame()
+
+    results_df = pd.DataFrame(results)
+
+    # Correct for multiple hypothesis testing.
+    reject, adjusted_p_values, _, _ = multipletests(
+        results_df["p_value"],
+        alpha=0.05,
+        method="fdr_bh",
+    )
+
+    results_df["adjusted_p_value"] = adjusted_p_values
+    results_df["significant"] = reject
+
+    results_df = results_df.sort_values(
+        "adjusted_p_value"
+    ).reset_index(drop=True)
+
+    logger.info(
+        "Tested %d pairs; %d passed FDR correction.",
+        len(results_df),
+        int(reject.sum()),
+    )
+
+    return results_df
+
+
