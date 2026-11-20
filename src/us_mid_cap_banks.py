@@ -315,7 +315,110 @@ def run_research_pipeline() -> None:
     print(len(testing_prices))
 
 
+
+def backtest_pair_out_of_sample(
+    training_prices: pd.DataFrame,
+    testing_prices: pd.DataFrame,
+    ticker_1: str,
+    ticker_2: str,
+    entry_threshold: float = 2.0,
+    exit_threshold: float = 0.5,
+) -> pd.DataFrame:
+    """
+    Basic out-of-sample pairs backtest.
+
+    Hedge ratio and spread normalisation parameters are
+    estimated exclusively from the training period.
+
+    Signals are generated at the close and executed
+    on the following trading day.
+    """
+
+    # 1. Prepare training data.
+    train = training_prices[[ticker_1, ticker_2]].dropna()
+
+    if len(train) < 252:
+        raise ValueError("Insufficient training observations.")
+
+    log_train = np.log(train)
+
+    # 2. Estimate the hedge ratio using training data only.
+    beta, alpha = np.polyfit(
+        log_train[ticker_2],
+        log_train[ticker_1],
+        1,
+    )
+
+    train_spread = (
+        log_train[ticker_1] - alpha - beta * log_train[ticker_2]
+    )
+
+    spread_mean = train_spread.mean()
+    spread_std = train_spread.std()
+
+    if not np.isfinite(spread_std) or spread_std == 0:
+        raise ValueError("Invalid training spread volatility.")
+
+    # 3. Prepare out-of-sample data.
+    test = testing_prices[[ticker_1, ticker_2]].dropna()
+
+    if len(test) < 2:
+        raise ValueError("Insufficient out-of-sample observations.")
+
+    log_test = np.log(test)
+
+    test_spread = (
+        log_test[ticker_1] - alpha - beta * log_test[ticker_2]
+    )
+
+    # Use training-period parameters to calculate test z-scores.
+    z_score = (test_spread - spread_mean) / spread_std
+
+    # 4. Generate trading signals.
+    position = 0
+    positions = []
+
+    for z in z_score:
+        if position == 0:
+            if z > entry_threshold:
+                position = -1
+            elif z < -entry_threshold:
+                position = 1
+
+        elif abs(z) < exit_threshold:
+            position = 0
+
+        positions.append(position)
+
+    # 5. Execute signals on the following trading day.
+    positions = pd.Series(
+        positions,
+        index=test.index,
+        dtype=float,
+    )
+
+    executed_positions = positions.shift(1).fillna(0)
+
+    # 6. Calculate the daily spread-return proxy.
+    spread_returns = (
+        log_test[ticker_1].diff()
+        - beta * log_test[ticker_2].diff()
+    )
+
+    strategy_returns = executed_positions * spread_returns
+
+    results = pd.DataFrame({
+        "spread": test_spread,
+        "z_score": z_score,
+        "signal": positions,
+        "position": executed_positions,
+        "spread_return": spread_returns,
+        "strategy_return": strategy_returns,
+    })
+
+    return results
+
 if __name__ == "__main__":
-    run_research_pipeline()
+        run_research_pipeline()
 
 
