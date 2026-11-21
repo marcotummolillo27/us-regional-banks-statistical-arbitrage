@@ -327,13 +327,43 @@ def run_research_pipeline() -> None:
                 pair.ticker_2,
             )
 
+            
             valid_returns = pair_results["strategy_return"].dropna()
 
-            print(
-                f"{pair.ticker_1} - {pair.ticker_2} | "
-                f"Active days: {(pair_results['position'] != 0).sum()} | "
-                f"Cumulative spread-return proxy: {valid_returns.sum():.4f}"
+            if len(valid_returns) < 2:
+                print(f"{pair.ticker_1} - {pair.ticker_2}: Insufficient returns.")
+                continue
+
+            equity_curve = (1 + valid_returns).cumprod()
+
+            total_return = equity_curve.iloc[-1] - 1
+
+            annualised_return = (
+                equity_curve.iloc[-1] ** (252 / len(valid_returns)) - 1
             )
+
+            annualised_volatility = (
+                valid_returns.std(ddof=1) * np.sqrt(252)
+            )
+
+            sharpe_ratio = (
+                valid_returns.mean() / valid_returns.std(ddof=1)
+                * np.sqrt(252)
+                if valid_returns.std(ddof=1) > 0
+                else np.nan
+            )
+
+            drawdown = equity_curve / equity_curve.cummax() - 1
+            max_drawdown = drawdown.min()
+
+            print(f"\n{pair.ticker_1} - {pair.ticker_2}")
+            print(f"Active days: {(pair_results['position'] != 0).sum()}")
+            print(f"Compounded total return: {total_return:.2%}")
+            print(f"Annualised return: {annualised_return:.2%}")
+            print(f"Annualised volatility: {annualised_volatility:.2%}")
+            print(f"Sharpe ratio: {sharpe_ratio:.3f}")
+            print(f"Maximum drawdown: {max_drawdown:.2%}")
+
 
 
 
