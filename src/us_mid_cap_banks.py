@@ -376,7 +376,9 @@ def backtest_pair_out_of_sample(
     ticker_2: str,
     entry_threshold: float = 2.0,
     exit_threshold: float = 0.5,
-) -> pd.DataFrame:
+    transaction_cost_bps: float = 5.0,
+    annual_borrow_fee: float = 0.01,
+    ) -> pd.DataFrame:
     """
     Out-of-sample dollar-neutral pairs backtest.
 
@@ -480,11 +482,36 @@ def backtest_pair_out_of_sample(
     # 8. Equal-dollar long/short portfolio returns.
     # +1: long ticker_1, short ticker_2.
     # -1: short ticker_1, long ticker_2.
-    strategy_returns = (
-        executed_positions
-        * 0.5
-        * (return_1 - return_2)
-    )
+    # 8. Gross equal-dollar long/short portfolio returns.
+gross_returns = (
+    executed_positions
+    * 0.5
+    * (return_1 - return_2)
+)
+
+# Estimate daily transaction costs from changes in position.
+position_changes = executed_positions.diff().abs()
+position_changes.iloc[0] = abs(executed_positions.iloc[0])
+
+transaction_cost = (
+    position_changes
+    * (transaction_cost_bps / 10000)
+)
+
+# Estimate daily short-borrow fees.
+borrow_cost = (
+    (executed_positions != 0).astype(float)
+    * (annual_borrow_fee / 252)
+    * 0.5
+)
+
+# Net returns after estimated costs.
+strategy_returns = gross_returns - transaction_cost - borrow_cost
+
+# Preserve missing return observations.
+strategy_returns = strategy_returns.where(
+    return_1.notna() & return_2.notna()
+)
 
     # Do not treat missing return observations as zero.
     strategy_returns = strategy_returns.where(
