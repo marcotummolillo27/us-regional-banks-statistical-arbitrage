@@ -315,6 +315,28 @@ def run_research_pipeline() -> None:
     print(len(testing_prices))
 
 
+    if not candidate_pairs.empty:
+        print("\nOUT-OF-SAMPLE BACKTEST — INITIAL RESULTS")
+        print("----------------------------------------")
+
+        for pair in candidate_pairs.itertuples(index=False):
+            pair_results = backtest_pair_out_of_sample(
+                training_prices,
+                testing_prices,
+                pair.ticker_1,
+                pair.ticker_2,
+            )
+
+            valid_returns = pair_results["strategy_return"].dropna()
+
+            print(
+                f"{pair.ticker_1} - {pair.ticker_2} | "
+                f"Active days: {(pair_results['position'] != 0).sum()} | "
+                f"Cumulative spread-return proxy: {valid_returns.sum():.4f}"
+            )
+
+
+
 
 def backtest_pair_out_of_sample(
     training_prices: pd.DataFrame,
