@@ -338,6 +338,7 @@ def run_research_pipeline() -> None:
 
 
 
+
 def backtest_pair_out_of_sample(
     training_prices: pd.DataFrame,
     testing_prices: pd.DataFrame,
@@ -347,24 +348,28 @@ def backtest_pair_out_of_sample(
     exit_threshold: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Basic out-of-sample pairs backtest.
+    Out-of-sample dollar-neutral pairs backtest.
 
     Hedge ratio and spread normalisation parameters are
-    estimated exclusively from the training period.
+    estimated exclusively from training data.
 
-    Signals are generated at the close and executed
-    on the following trading day.
+    Each active position allocates 50% long and 50% short.
+    Signals are generated at the close and executed on
+    the following trading day.
     """
 
-    # 1. Prepare training data.
+    # 1. Prepare synchronized training prices.
     train = training_prices[[ticker_1, ticker_2]].dropna()
 
     if len(train) < 252:
         raise ValueError("Insufficient training observations.")
 
+    if (train <= 0).any().any():
+        raise ValueError("Training prices must be positive.")
+
     log_train = np.log(train)
 
-    # 2. Estimate the hedge ratio using training data only.
+    # 2. Estimate hedge ratio using training data only.
     beta, alpha = np.polyfit(
         log_train[ticker_2],
         log_train[ticker_1],
@@ -372,7 +377,9 @@ def backtest_pair_out_of_sample(
     )
 
     train_spread = (
-        log_train[ticker_1] - alpha - beta * log_train[ticker_2]
+        log_train[ticker_1]
+        - alpha
+        - beta * log_train[ticker_2]
     )
 
     spread_mean = train_spread.mean()
@@ -381,26 +388,39 @@ def backtest_pair_out_of_sample(
     if not np.isfinite(spread_std) or spread_std == 0:
         raise ValueError("Invalid training spread volatility.")
 
-    # 3. Prepare out-of-sample data.
-    test = testing_prices[[ticker_1, ticker_2]].dropna()
+    # 3. Preserve the full test-period calendar.
+    test = testing_prices[[ticker_1, ticker_2]].copy()
 
-    if len(test) < 2:
-        raise ValueError("Insufficient out-of-sample observations.")
+    valid_prices = test.notna().all(axis=1)
 
+    if valid_prices.sum() < 2:
+        raise ValueError("Insufficient test observations.")
+
+    if (test.stack() <= 0).any():
+        raise ValueError("Test prices must be positive.")
+
+    # 4. Calculate spread and z-score.
     log_test = np.log(test)
 
     test_spread = (
-        log_test[ticker_1] - alpha - beta * log_test[ticker_2]
+        log_test[ticker_1]
+        - alpha
+        - beta * log_test[ticker_2]
     )
 
-    # Use training-period parameters to calculate test z-scores.
     z_score = (test_spread - spread_mean) / spread_std
 
-    # 4. Generate trading signals.
+    z_score = z_score.where(valid_prices)
+
+    # 5. Generate signals at the close.
     position = 0
     positions = []
 
     for z in z_score:
+        if pd.isna(z):
+            positions.append(position)
+            continue
+
         if position == 0:
             if z > entry_threshold:
                 position = -1
@@ -412,35 +432,47 @@ def backtest_pair_out_of_sample(
 
         positions.append(position)
 
-    # 5. Execute signals on the following trading day.
     positions = pd.Series(
         positions,
         index=test.index,
         dtype=float,
     )
 
+    # 6. Execute signals on the following trading day.
     executed_positions = positions.shift(1).fillna(0)
 
-    # 6. Calculate the daily spread-return proxy.
-    spread_returns = (
-        log_test[ticker_1].diff()
-        - beta * log_test[ticker_2].diff()
+    # 7. Calculate actual daily simple stock returns.
+    asset_returns = test.pct_change(fill_method=None)
+
+    return_1 = asset_returns[ticker_1]
+    return_2 = asset_returns[ticker_2]
+
+    # 8. Equal-dollar long/short portfolio returns.
+    # +1: long ticker_1, short ticker_2.
+    # -1: short ticker_1, long ticker_2.
+    strategy_returns = (
+        executed_positions
+        * 0.5
+        * (return_1 - return_2)
     )
 
-    strategy_returns = executed_positions * spread_returns
+    # Do not treat missing return observations as zero.
+    strategy_returns = strategy_returns.where(
+        return_1.notna() & return_2.notna()
+    )
 
+    # 9. Return detailed results.
     results = pd.DataFrame({
         "spread": test_spread,
         "z_score": z_score,
         "signal": positions,
         "position": executed_positions,
-        "spread_return": spread_returns,
+        "ticker_1_return": return_1,
+        "ticker_2_return": return_2,
         "strategy_return": strategy_returns,
     })
 
     return results
 
 if __name__ == "__main__":
-        run_research_pipeline()
-
-
+    run_research_pipeline()
