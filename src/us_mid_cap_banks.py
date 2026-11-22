@@ -513,21 +513,17 @@ strategy_returns = strategy_returns.where(
     return_1.notna() & return_2.notna()
 )
 
-    # Do not treat missing return observations as zero.
-    strategy_returns = strategy_returns.where(
-        return_1.notna() & return_2.notna()
-    )
 
     # 9. Return detailed results.
-    results = pd.DataFrame({
-        "spread": test_spread,
-        "z_score": z_score,
-        "signal": positions,
-        "position": executed_positions,
-        "ticker_1_return": return_1,
-        "ticker_2_return": return_2,
-        "strategy_return": strategy_returns,
-    })
+results = pd.DataFrame({
+     "spread": test_spread,
+     "z_score": z_score,
+     "signal": positions,
+     "position": executed_positions,
+     "ticker_1_return": return_1,
+     "ticker_2_return": return_2,
+     "strategy_return": strategy_returns,
+     })
 
     return results
 
