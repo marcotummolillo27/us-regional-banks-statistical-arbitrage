@@ -338,10 +338,20 @@ def run_research_pipeline() -> None:
 
             total_return = equity_curve.iloc[-1] - 1
 
+            # Annualise using the actual out-of-sample calendar period.
+            elapsed_days = (
+                valid_returns.index[-1] - valid_returns.index[0]
+            ).days
+
+            years = elapsed_days / 365.25
+
             annualised_return = (
-                equity_curve.iloc[-1] ** (252 / len(valid_returns)) - 1
+                (1 + total_return) ** (1 / years) - 1
+                if years > 0 and total_return > -1
+                else np.nan
             )
 
+            # Daily risk metrics, annualised using 252 trading days.
             annualised_volatility = (
                 valid_returns.std(ddof=1) * np.sqrt(252)
             )
