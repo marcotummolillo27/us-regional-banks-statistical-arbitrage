@@ -483,47 +483,53 @@ def backtest_pair_out_of_sample(
     # +1: long ticker_1, short ticker_2.
     # -1: short ticker_1, long ticker_2.
     # 8. Gross equal-dollar long/short portfolio returns.
-gross_returns = (
-    executed_positions
-    * 0.5
-    * (return_1 - return_2)
-)
+    # 8. Equal-dollar long/short portfolio returns.
+    # +1: long ticker_1, short ticker_2.
+    # -1: short ticker_1, long ticker_2.
 
-# Estimate daily transaction costs from changes in position.
-position_changes = executed_positions.diff().abs()
-position_changes.iloc[0] = abs(executed_positions.iloc[0])
+    gross_returns = (
+        executed_positions
+        * 0.5
+        * (return_1 - return_2)
+    )
 
-transaction_cost = (
-    position_changes
-    * (transaction_cost_bps / 10000)
-)
+    # Estimate daily transaction costs from changes in position.
+    position_changes = executed_positions.diff().abs()
+    position_changes.iloc[0] = abs(executed_positions.iloc[0])
 
-# Estimate daily short-borrow fees.
-borrow_cost = (
-    (executed_positions != 0).astype(float)
-    * (annual_borrow_fee / 252)
-    * 0.5
-)
+    transaction_cost = (
+        position_changes
+        * (transaction_cost_bps / 10000)
+    )
 
-# Net returns after estimated costs.
-strategy_returns = gross_returns - transaction_cost - borrow_cost
+    # Estimate daily short-borrow fees.
+    borrow_cost = (
+        (executed_positions != 0).astype(float)
+        * (annual_borrow_fee / 252)
+        * 0.5
+    )
 
-# Preserve missing return observations.
-strategy_returns = strategy_returns.where(
-    return_1.notna() & return_2.notna()
-)
+    # Net returns after estimated costs.
+    strategy_returns = gross_returns - transaction_cost - borrow_cost
+
+    # Preserve missing return observations.
+    strategy_returns = strategy_returns.where(
+        return_1.notna() & return_2.notna()
+    )
+
+    # 9. Return detailed results.
+    results = pd.DataFrame({
+        "spread": test_spread,
+        "z_score": z_score,
+        "signal": positions,
+        "position": executed_positions,
+        "ticker_1_return": return_1,
+        "ticker_2_return": return_2,
+        "strategy_return": strategy_returns,
+    })
+
+    return results
 
 
-results = pd.DataFrame({
-    "spread": test_spread,
-    "z_score": z_score,
-    "signal": positions,
-    "position": executed_positions,
-    "ticker_1_return": return_1,
-    "ticker_2_return": return_2,
-    "strategy_return": strategy_returns,
-})
-
-return results
 if __name__ == "__main__":
     run_research_pipeline()
