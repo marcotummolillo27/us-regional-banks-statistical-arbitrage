@@ -514,18 +514,16 @@ strategy_returns = strategy_returns.where(
 )
 
 
-    # 9. Return detailed results.
 results = pd.DataFrame({
-     "spread": test_spread,
-     "z_score": z_score,
-     "signal": positions,
-     "position": executed_positions,
-     "ticker_1_return": return_1,
-     "ticker_2_return": return_2,
-     "strategy_return": strategy_returns,
-     })
+    "spread": test_spread,
+    "z_score": z_score,
+    "signal": positions,
+    "position": executed_positions,
+    "ticker_1_return": return_1,
+    "ticker_2_return": return_2,
+    "strategy_return": strategy_returns,
+})
 
-    return results
-
+return results
 if __name__ == "__main__":
     run_research_pipeline()
